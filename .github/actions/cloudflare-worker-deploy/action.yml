@@ -30,10 +30,14 @@ inputs:
     required: false
     default: ""
   api_token:
-    description: Cloudflare API token. Pass ${{ secrets.CLOUDFLARE_API_TOKEN }}.
+    description: >-
+      Cloudflare API token with permission to deploy Workers. Provide the value
+      of the CLOUDFLARE_API_TOKEN repository secret.
     required: true
   account_id:
-    description: Cloudflare account ID. Pass ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.
+    description: >-
+      Cloudflare account ID. Provide the value of the CLOUDFLARE_ACCOUNT_ID
+      repository secret.
     required: true
 
 runs:
