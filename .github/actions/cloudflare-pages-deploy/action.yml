@@ -1,0 +1,104 @@
+name: Cloudflare Pages Deploy
+description: |-
+  Shared deployment primitive for Cloudflare Pages (Direct Upload).
+
+  Runs `wrangler pages deploy` inside the calling job, so static build output
+  produced by the caller is directly visible. The caller owns checkout, Node
+  setup, install and build; this action only owns Cloudflare auth and the
+  Wrangler Pages deploy invocation.
+
+  The target Pages project must already exist; this action never creates or
+  reconfigures projects, domains or DNS.
+
+  Required repository secrets:
+    CLOUDFLARE_API_TOKEN  - Cloudflare API token with permission to deploy Pages
+    CLOUDFLARE_ACCOUNT_ID - Cloudflare account ID
+
+inputs:
+  directory:
+    description: >-
+      Directory to deploy, relative to working_directory. This is the caller's
+      static build output (e.g. "static" or "site-dist"). The directory must
+      exist and contain the files to upload.
+    required: true
+  project_name:
+    description: >-
+      Cloudflare Pages project name. The project must already exist in the
+      account; the action fails instead of creating a new project.
+    required: true
+  branch:
+    description: >-
+      Branch to associate the deployment with. GitHub Actions checkouts are
+      detached HEAD, so Wrangler's git-based branch detection cannot be relied
+      on in CI: pass the production branch (e.g. "main") for production
+      deployments, or the current ref name for preview deployments. Empty means
+      "let Wrangler detect the branch", which is only reliable outside CI.
+    required: false
+    default: ""
+  working_directory:
+    description: >-
+      Directory that contains the Wrangler project, relative to the repository
+      root. Defaults to the repository root (".").
+    required: false
+    default: "."
+  wrangler_version:
+    description: >-
+      Wrangler version to use. Leave empty to use the wrangler-action default.
+    required: false
+    default: ""
+  api_token:
+    description: >-
+      Cloudflare API token with permission to deploy Pages. Provide the value
+      of the CLOUDFLARE_API_TOKEN repository secret.
+    required: true
+  account_id:
+    description: >-
+      Cloudflare account ID. Provide the value of the CLOUDFLARE_ACCOUNT_ID
+      repository secret.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: bash
+      working-directory: ${{ inputs.working_directory }}
+      env:
+        DIRECTORY: ${{ inputs.directory }}
+        PROJECT_NAME: ${{ inputs.project_name }}
+        BRANCH: ${{ inputs.branch }}
+        SAFE_PATH: '^[A-Za-z0-9._/-]+$'
+        SAFE_NAME: '^[A-Za-z0-9_-]+$'
+      run: |-
+        if [ -z "${DIRECTORY}" ]; then
+          echo "::error title=Invalid input::'directory' must not be empty."
+          exit 1
+        fi
+        if [ -z "${PROJECT_NAME}" ]; then
+          echo "::error title=Invalid input::'project_name' must not be empty."
+          exit 1
+        fi
+        if [[ ! "${DIRECTORY}" =~ ${SAFE_PATH} ]] || [[ "${DIRECTORY}" == -* ]] || [[ "${DIRECTORY}" == *..* ]]; then
+          echo "::error title=Invalid input::'directory' contains characters that are not safe to pass to Wrangler (allowed: A-Z a-z 0-9 . _ / -), must not start with '-' and must not contain '..'."
+          exit 1
+        fi
+        if [[ ! "${PROJECT_NAME}" =~ ${SAFE_NAME} ]]; then
+          echo "::error title=Invalid input::'project_name' contains characters that are not safe to pass to Wrangler (allowed: A-Z a-z 0-9 _ -)."
+          exit 1
+        fi
+        if [ -n "${BRANCH}" ] && [[ ! "${BRANCH}" =~ ${SAFE_PATH} ]]; then
+          echo "::error title=Invalid input::'branch' contains characters that are not safe to pass to Wrangler (allowed: A-Z a-z 0-9 . _ / -)."
+          exit 1
+        fi
+        if [ ! -d "${DIRECTORY}" ]; then
+          echo "::error title=Missing directory::deploy directory '${DIRECTORY}' does not exist (relative to working_directory '${PWD}'). Build/publish it before invoking this action."
+          exit 1
+        fi
+    - name: Deploy Pages with Wrangler
+      uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ inputs.api_token }}
+        accountId: ${{ inputs.account_id }}
+        workingDirectory: ${{ inputs.working_directory }}
+        wranglerVersion: ${{ inputs.wrangler_version }}
+        command: pages deploy ${{ inputs.directory }} --project-name=${{ inputs.project_name }}${{ inputs.branch != '' && format(' --branch={0}', inputs.branch) || '' }}
