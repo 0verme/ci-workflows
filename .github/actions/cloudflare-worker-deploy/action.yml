@@ -1,0 +1,57 @@
+name: Cloudflare Worker Deploy
+description: |-
+  Shared deployment primitive for Cloudflare Workers.
+
+  Runs `wrangler deploy` inside the calling job, so build outputs produced by
+  the caller (e.g. site-dist/) are directly visible. The caller owns checkout,
+  Node setup, install and build; this action only owns Cloudflare auth and the
+  Wrangler deploy invocation.
+
+  Required repository secrets:
+    CLOUDFLARE_API_TOKEN  - Cloudflare API token with permission to deploy Workers
+    CLOUDFLARE_ACCOUNT_ID - Cloudflare account ID
+
+inputs:
+  working_directory:
+    description: >-
+      Directory that contains the Wrangler project (wrangler.jsonc /
+      wrangler.toml), relative to the repository root.
+    required: false
+    default: "."
+  command:
+    description: >-
+      Wrangler command to run. Only "deploy" is currently supported; the action
+      rejects any other value.
+    required: false
+    default: "deploy"
+  wrangler_version:
+    description: >-
+      Wrangler version to use. Leave empty to use the wrangler-action default.
+    required: false
+    default: ""
+  api_token:
+    description: Cloudflare API token. Pass ${{ secrets.CLOUDFLARE_API_TOKEN }}.
+    required: true
+  account_id:
+    description: Cloudflare account ID. Pass ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Reject unsupported wrangler command
+      if: ${{ inputs.command != 'deploy' }}
+      shell: bash
+      env:
+        COMMAND: ${{ inputs.command }}
+      run: |-
+        echo "::error title=Unsupported command::wrangler command '${COMMAND}' is not supported by this shared action; only 'deploy' is allowed."
+        exit 1
+    - name: Deploy Worker with Wrangler
+      uses: cloudflare/wrangler-action@v3
+      with:
+        apiToken: ${{ inputs.api_token }}
+        accountId: ${{ inputs.account_id }}
+        command: ${{ inputs.command }}
+        workingDirectory: ${{ inputs.working_directory }}
+        wranglerVersion: ${{ inputs.wrangler_version }}
